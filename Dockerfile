@@ -170,3 +170,5 @@ USER root
 RUN uv pip install .[postgres]
 USER superset
 CMD ["/app/docker/entrypoints/docker-ci.sh"]
+
+COPY pythonpath/superset_config.py /app/pythonpath/
