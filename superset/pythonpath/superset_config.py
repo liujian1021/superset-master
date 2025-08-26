@@ -5,3 +5,4 @@ SESSION_COOKIE_SECURE = True  # 如果你用的是 https
 FEATURE_FLAGS = {
     "AG_GRID_TABLE": True,
 }
+print("✅ superset_config.py loaded")
