@@ -95,9 +95,9 @@ export default class MainPreset extends Preset {
         ]
       : [];
 
-    const agGridTablePlugin = isFeatureEnabled(FeatureFlag.AgGridTableEnabled)
-      ? [new AgGridTableChartPlugin().configure({ key: VizType.TableAgGrid })]
-      : [];
+    const agGridTablePlugin = [
+    new AgGridTableChartPlugin().configure({ key: VizType.TableAgGrid }),
+    ];
 
     super({
       name: 'Legacy charts',
