@@ -1,6 +1,5 @@
 #
-# Licensed to the Apache Software Foundation (ASF) under one or more
-# contributor license agreements...
+# Apache Superset Dockerfile (simplified, no cache mounts)
 #
 
 ######################################################################
@@ -27,15 +26,11 @@ ENV BUILD_CMD=${NPM_BUILD_CMD} \
 RUN /app/docker/frontend-mem-nag.sh
 
 WORKDIR /app/superset-frontend
+RUN mkdir -p /app/superset/static/assets /app/superset/translations
 
-RUN mkdir -p /app/superset/static/assets \
-             /app/superset/translations
-
-RUN --mount=type=bind,source=./superset-frontend/package.json,target=./package.json \
-    --mount=type=bind,source=./superset-frontend/package-lock.json,target=./package-lock.json \
-    --mount=type=cache,id=npm-cache-root,target=/root/.cache \
-    --mount=type=cache,id=npm-cache,target=/root/.npm \
-    if [ "$DEV_MODE" = "false" ]; then \
+# Install frontend deps
+COPY superset-frontend/package*.json ./
+RUN if [ "$DEV_MODE" = "false" ]; then \
         npm ci; \
     else \
         echo "Skipping 'npm ci' in dev mode"; \
@@ -47,17 +42,13 @@ COPY superset-frontend /app/superset-frontend
 # superset-node is used for compiling frontend assets
 ######################################################################
 FROM superset-node-ci AS superset-node
-
-RUN --mount=type=cache,id=npm-build-cache,target=/root/.npm \
-    if [ "$DEV_MODE" = "false" ]; then \
+RUN if [ "$DEV_MODE" = "false" ]; then \
         echo "Running 'npm run ${BUILD_CMD}'"; \
         npm run ${BUILD_CMD}; \
     else \
         echo "Skipping 'npm run ${BUILD_CMD}' in dev mode"; \
     fi;
-
 COPY superset/translations /app/superset/translations
-
 RUN if [ "$BUILD_TRANSLATIONS" = "true" ]; then \
         npm run build-translation; \
     fi; \
@@ -87,13 +78,11 @@ ENV PATH="/app/.venv/bin:${PATH}"
 # Python translation compiler layer
 ######################################################################
 FROM python-base AS python-translation-compiler
-
 ARG BUILD_TRANSLATIONS
 ENV BUILD_TRANSLATIONS=${BUILD_TRANSLATIONS}
 
 COPY requirements/translations.txt requirements/
-RUN --mount=type=cache,id=uv-translation-cache,target=/root/.cache/uv \
-    . /app/.venv/bin/activate && /app/docker/pip-install.sh --requires-build-essential -r requirements/translations.txt
+RUN . /app/.venv/bin/activate && /app/docker/pip-install.sh --requires-build-essential -r requirements/translations.txt
 
 COPY superset/translations/ /app/translations_mo/
 RUN if [ "$BUILD_TRANSLATIONS" = "true" ]; then \
@@ -115,21 +104,14 @@ ENV SUPERSET_HOME="/app/superset_home" \
     SUPERSET_PORT="8088"
 
 COPY --chmod=755 docker/entrypoints /app/docker/entrypoints
-
 WORKDIR /app
-RUN mkdir -p \
-      ${PYTHONPATH} \
-      superset/static \
-      requirements \
-      superset-frontend \
-      apache_superset.egg-info \
-      requirements \
+
+RUN mkdir -p ${PYTHONPATH} superset/static requirements superset-frontend apache_superset.egg-info requirements \
     && touch superset/static/version_info.json
 
 ARG INCLUDE_CHROMIUM="false"
 ARG INCLUDE_FIREFOX="false"
-RUN --mount=type=cache,id=uv-browser-cache,target=${SUPERSET_HOME}/.cache/uv \
-    if [ "$INCLUDE_CHROMIUM" = "true" ] || [ "$INCLUDE_FIREFOX" = "true" ]; then \
+RUN if [ "$INCLUDE_CHROMIUM" = "true" ] || [ "$INCLUDE_FIREFOX" = "true" ]; then \
         uv pip install playwright && \
         playwright install-deps && \
         if [ "$INCLUDE_CHROMIUM" = "true" ]; then playwright install chromium; fi && \
@@ -143,18 +125,11 @@ COPY superset-frontend/package.json superset-frontend/
 COPY scripts/check-env.py scripts/
 COPY --chmod=755 ./docker/entrypoints/run-server.sh /usr/bin/
 
-RUN /app/docker/apt-install.sh \
-      curl \
-      libsasl2-dev \
-      libsasl2-modules-gssapi-mit \
-      libpq-dev \
-      libecpg-dev \
-      libldap2-dev
+RUN /app/docker/apt-install.sh curl libsasl2-dev libsasl2-modules-gssapi-mit libpq-dev libecpg-dev libldap2-dev
 
 COPY --from=superset-node /app/superset/static/assets superset/static/assets
 COPY superset superset
 RUN rm superset/translations/*/*/*.po
-
 COPY --from=superset-node /app/superset/translations superset/translations
 COPY --from=python-translation-compiler /app/translations_mo superset/translations
 
@@ -166,42 +141,25 @@ EXPOSE ${SUPERSET_PORT}
 # Final lean image...
 ######################################################################
 FROM python-common AS lean
-
 COPY requirements/base.txt requirements/
 COPY superset-core superset-core
-
-RUN --mount=type=cache,id=uv-base-cache,target=${SUPERSET_HOME}/.cache/uv \
-    /app/docker/pip-install.sh --requires-build-essential -r requirements/base.txt
-
-RUN --mount=type=cache,id=uv-superset-cache,target=${SUPERSET_HOME}/.cache/uv \
-    uv pip install -e .
+RUN /app/docker/pip-install.sh --requires-build-essential -r requirements/base.txt
+RUN uv pip install -e .
 RUN python -m compileall /app/superset
-
 USER superset
 
 ######################################################################
 # Dev image...
 ######################################################################
 FROM python-common AS dev
-
-RUN /app/docker/apt-install.sh \
-    git \
-    pkg-config \
-    default-libmysqlclient-dev
-
+RUN /app/docker/apt-install.sh git pkg-config default-libmysqlclient-dev
 COPY requirements/*.txt requirements/
 COPY superset-core superset-core
 COPY superset-cli superset-cli
-
-RUN --mount=type=cache,id=uv-dev-cache,target=${SUPERSET_HOME}/.cache/uv \
-    /app/docker/pip-install.sh --requires-build-essential -r requirements/development.txt
-
-RUN --mount=type=cache,id=uv-dev-superset-cache,target=${SUPERSET_HOME}/.cache/uv \
-    uv pip install -e .
-
+RUN /app/docker/pip-install.sh --requires-build-essential -r requirements/development.txt
+RUN uv pip install -e .
 RUN uv pip install .[postgres]
 RUN python -m compileall /app/superset
-
 USER superset
 
 ######################################################################
