@@ -1,0 +1,2 @@
+PUBLIC_ROLE_LIKE = "Gamma"
+ENABLE_GUEST_ROLE = True
