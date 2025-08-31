@@ -145,6 +145,7 @@ COPY requirements/base.txt requirements/
 COPY superset-core superset-core
 RUN /app/docker/pip-install.sh --requires-build-essential -r requirements/base.txt
 RUN uv pip install -e .[bigquery]
+RUN uv pip install -e .shillelagh[gsheetsapi]
 RUN python -m compileall /app/superset
 USER superset
 
